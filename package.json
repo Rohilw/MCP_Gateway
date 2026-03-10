@@ -1,0 +1,23 @@
+{
+  "name": "mcp-gateway",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "services/*",
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @mcp-gateway/gateway\" \"npm run dev -w @mcp-gateway/mcp-sql-server\" \"npm run dev -w @mcp-gateway/mcp-wiki-server\" \"npm run dev -w @mcp-gateway/demo-ui\"",
+    "build": "npm run build -ws",
+    "lint": "npm run lint -ws",
+    "test": "npm run test -ws --if-present"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.25.0",
+    "@typescript-eslint/parser": "^8.25.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^8.57.1",
+    "typescript": "^5.8.2"
+  }
+}

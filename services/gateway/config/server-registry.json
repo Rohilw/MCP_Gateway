@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "sql": {
+      "base_url": "${MCP_SQL_SERVER_URL:http://localhost:4100}",
+      "tools": ["sql.listSchemas", "sql.listTables", "sql.describeTable", "sql.query"]
+    },
+    "wiki": {
+      "base_url": "${MCP_WIKI_SERVER_URL:http://localhost:4200}",
+      "tools": ["wiki.listPages", "wiki.getPage", "wiki.search"]
+    }
+  }
+}

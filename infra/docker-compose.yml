@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mcp-postgres
+    environment:
+      POSTGRES_DB: mcp_gateway
+      POSTGRES_USER: mcp_user
+      POSTGRES_PASSWORD: mcp_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  mcp-sql-server:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.dev
+    container_name: mcp-sql-server
+    command: npm run dev -w @mcp-gateway/mcp-sql-server
+    environment:
+      PORT: "4100"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: mcp_user
+      PGPASSWORD: mcp_password
+      PGDATABASE: mcp_gateway
+      MCP_HMAC_SECRET: dev-only-change-me-hmac
+      MCP_SIGNATURE_TOLERANCE_MS: "300000"
+      TLS_ENABLED: "false"
+    ports:
+      - "4100:4100"
+    depends_on:
+      - postgres
+
+  mcp-wiki-server:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.dev
+    container_name: mcp-wiki-server
+    command: npm run dev -w @mcp-gateway/mcp-wiki-server
+    environment:
+      PORT: "4200"
+      MCP_HMAC_SECRET: dev-only-change-me-hmac
+      MCP_SIGNATURE_TOLERANCE_MS: "300000"
+      TLS_ENABLED: "false"
+    ports:
+      - "4200:4200"
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.dev
+    container_name: mcp-gateway
+    command: npm run dev -w @mcp-gateway/gateway
+    environment:
+      PORT: "4000"
+      JWT_SECRET: dev-only-change-me
+      MCP_HMAC_SECRET: dev-only-change-me-hmac
+      MCP_SIGNATURE_TOLERANCE_MS: "300000"
+      RATE_LIMIT_WINDOW_MS: "60000"
+      RATE_LIMIT_MAX_REQUESTS: "60"
+      POSTGRES_URL: postgres://mcp_user:mcp_password@postgres:5432/mcp_gateway
+      MCP_SQL_SERVER_URL: http://mcp-sql-server:4100
+      MCP_WIKI_SERVER_URL: http://mcp-wiki-server:4200
+      MCP_MTLS_ENABLED: "false"
+      MCP_MTLS_REJECT_UNAUTHORIZED: "true"
+      SERVER_REGISTRY_FILE: services/gateway/config/server-registry.json
+    ports:
+      - "4000:4000"
+    depends_on:
+      - postgres
+      - mcp-sql-server
+      - mcp-wiki-server
+
+  demo-ui:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.dev
+    container_name: mcp-demo-ui
+    command: npm run dev -w @mcp-gateway/demo-ui -- -H 0.0.0.0
+    environment:
+      NEXT_PUBLIC_GATEWAY_URL: http://localhost:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - gateway
+
+volumes:
+  pgdata:
+yes
