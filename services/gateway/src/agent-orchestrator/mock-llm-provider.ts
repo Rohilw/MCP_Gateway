@@ -205,9 +205,16 @@ export class MockLlmProvider implements LlmProvider {
     const lines: string[] = [];
     for (const toolCall of params.toolCalls) {
       if (!toolCall.response.ok) {
-        lines.push(
-          `Tool ${toolCall.tool_name} failed: ${toolCall.response.humanMessage} [${toolCall.citation_id}]`
-        );
+        const reasonCode = toolCall.response.reasonCode;
+        if (reasonCode && reasonCode.startsWith("DENY_")) {
+          lines.push(
+            `Access denied for ${toolCall.tool_name}: ${toolCall.response.humanMessage} (${reasonCode}) [${toolCall.citation_id}]`
+          );
+        } else {
+          lines.push(
+            `Tool ${toolCall.tool_name} failed: ${toolCall.response.humanMessage} [${toolCall.citation_id}]`
+          );
+        }
         continue;
       }
 

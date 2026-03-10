@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+type BotRole = "HR_BOT" | "MARKETING_BOT";
+
 interface AuditRow {
   id: string | number;
   timestamp: string;
@@ -19,6 +21,12 @@ interface AuditResponse {
 }
 
 const gatewayUrl = process.env["NEXT_PUBLIC_GATEWAY_URL"] ?? "http://localhost:4000";
+const SESSION_ROLE_KEY = "mcp_demo_bot_role";
+const SESSION_USER_KEY = "mcp_demo_user_id";
+
+function isBotRole(value: string | null): value is BotRole {
+  return value === "HR_BOT" || value === "MARKETING_BOT";
+}
 
 function formatResource(resource: string): string {
   try {
@@ -54,6 +62,7 @@ export default function AuditPage() {
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [activeSession, setActiveSession] = useState<{ userId: string; botRole: BotRole } | null>(null);
 
   const rowCountLabel = useMemo(() => `${rows.length} row(s)`, [rows.length]);
 
@@ -79,12 +88,33 @@ export default function AuditPage() {
     void fetchAudit(limit);
   }, [fetchAudit, limit]);
 
+  useEffect(() => {
+    const storedRole = window.localStorage.getItem(SESSION_ROLE_KEY);
+    const storedUser = window.localStorage.getItem(SESSION_USER_KEY);
+    if (isBotRole(storedRole) && storedUser) {
+      setActiveSession({
+        userId: storedUser,
+        botRole: storedRole
+      });
+    }
+  }, []);
+
   return (
     <main className="page">
       <section className="hero">
         <p className="kicker">Secure AI Gateway</p>
         <h1>Audit Logs</h1>
         <p className="subtitle">Inspect recent allow/deny decisions recorded by the gateway.</p>
+        <p className={activeSession ? "role-pill role-pill-active" : "role-pill"}>
+          Active Role:{" "}
+          {activeSession ? (
+            <>
+              <strong>{activeSession.botRole}</strong> ({activeSession.userId})
+            </>
+          ) : (
+            "Not signed in"
+          )}
+        </p>
       </section>
 
       <section className="panel">

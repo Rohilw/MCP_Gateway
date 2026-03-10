@@ -58,6 +58,29 @@ body {
   max-width: 72ch;
 }
 
+.role-pill {
+  margin: 0.25rem 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.68);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.role-pill strong {
+  font-weight: 700;
+}
+
+.role-pill-active {
+  border-color: rgba(11, 143, 122, 0.45);
+  background: rgba(11, 143, 122, 0.12);
+  color: #0d5f52;
+}
+
 .panel {
   backdrop-filter: blur(6px);
   background: var(--panel);

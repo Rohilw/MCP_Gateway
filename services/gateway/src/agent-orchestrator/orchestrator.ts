@@ -221,6 +221,18 @@ function pickWikiPageHint(message: string): string {
   return "onboarding";
 }
 
+function isSensitivePayrollDataRequest(message: string): boolean {
+  const normalized = message.toLowerCase();
+  const mentionsPayroll = normalized.includes("payroll") || normalized.includes("line item");
+  const mentionsSensitiveField =
+    normalized.includes("bank account") ||
+    normalized.includes("bank_account") ||
+    normalized.includes("tax id") ||
+    normalized.includes("tax_id");
+  const mentionsBlockedTable = normalized.includes("payroll_line_items");
+  return mentionsBlockedTable || (mentionsPayroll && mentionsSensitiveField);
+}
+
 function makeCitationId(toolName: string, index: number): string {
   return `${toolName}#${index}`;
 }
@@ -241,6 +253,8 @@ export function createAgentOrchestrator(options: AgentOrchestratorOptions): Agen
       user_id: request.user_id ?? "agent-orchestrator",
       bot_role: request.bot_role
     };
+    const forceHrDeniedSql =
+      actor.bot_role === "HR_BOT" && isSensitivePayrollDataRequest(request.message);
 
     const toolSelectionPrompt = buildToolSelectionPrompt(request.message);
     const toolSelection = await llm.selectTools({
@@ -252,6 +266,9 @@ export function createAgentOrchestrator(options: AgentOrchestratorOptions): Agen
     let sqlGenerationPrompt: string | undefined;
 
     const plannedTools = Array.from(new Set(toolSelection.tools));
+    if (forceHrDeniedSql && !plannedTools.includes("sql.query")) {
+      plannedTools.push("sql.query");
+    }
 
     for (const toolName of plannedTools) {
       if (toolName === "wiki.search") {
@@ -288,6 +305,42 @@ export function createAgentOrchestrator(options: AgentOrchestratorOptions): Agen
 
       if (toolName === "sql.query") {
         sqlGenerationPrompt = buildSqlGenerationPrompt(request.message, SQL_SCHEMA_CONSTRAINTS);
+        if (forceHrDeniedSql) {
+          const blockedQuery =
+            "SELECT employee_id, bank_account, tax_id, amount FROM public.payroll_line_items ORDER BY employee_id LIMIT 5";
+          const input: ExecuteToolInput = {
+            serverName: "sql",
+            toolName: "sql.query",
+            body: {
+              resource: {
+                source: "sql",
+                db: SQL_SCHEMA_CONSTRAINTS.db,
+                schema: SQL_SCHEMA_CONSTRAINTS.schema,
+                table: "payroll_line_items"
+              },
+              input: {
+                query: blockedQuery,
+                db: SQL_SCHEMA_CONSTRAINTS.db,
+                schema: SQL_SCHEMA_CONSTRAINTS.schema
+              }
+            }
+          };
+          const response = await executor.executeTool({
+            actor,
+            serverName: input.serverName,
+            toolName: input.toolName,
+            body: input.body
+          });
+          toolCalls.push({
+            citation_id: makeCitationId(input.toolName, toolCalls.length + 1),
+            server_name: input.serverName,
+            tool_name: input.toolName,
+            request: input,
+            response
+          });
+          continue;
+        }
+
         const sqlDraft = await llm.generateSql({
           prompt: sqlGenerationPrompt,
           message: request.message,

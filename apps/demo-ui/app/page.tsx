@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 type BotRole = "HR_BOT" | "MARKETING_BOT";
@@ -72,7 +72,18 @@ interface ApiErrorResponse {
   details?: string;
 }
 
+interface ParsedApiError {
+  message: string;
+  reasonCode?: string;
+}
+
 const gatewayUrl = process.env["NEXT_PUBLIC_GATEWAY_URL"] ?? "http://localhost:4000";
+const SESSION_ROLE_KEY = "mcp_demo_bot_role";
+const SESSION_USER_KEY = "mcp_demo_user_id";
+
+function isBotRole(value: string | null): value is BotRole {
+  return value === "HR_BOT" || value === "MARKETING_BOT";
+}
 
 function summarizeToolOutput(toolCall: AgentToolCall): string {
   if (!toolCall.response.ok) {
@@ -119,16 +130,20 @@ function extractBlocked(citations: AgentToolCall[]): ChatTurn["blocked"] {
     }));
 }
 
-async function parseErrorResponse(response: Response): Promise<string> {
+async function parseErrorResponse(response: Response): Promise<ParsedApiError> {
   const raw = await response.text();
   try {
     const parsed = JSON.parse(raw) as ApiErrorResponse;
-    const reason = parsed.reason_code ? ` (${parsed.reason_code})` : "";
     const human = parsed.human_message ?? parsed.error ?? raw;
     const details = parsed.details ? ` - ${parsed.details}` : "";
-    return `${human}${reason}${details}`;
+    return {
+      message: `${human}${details}`,
+      ...(parsed.reason_code ? { reasonCode: parsed.reason_code } : {})
+    };
   } catch {
-    return raw;
+    return {
+      message: raw
+    };
   }
 }
 
@@ -139,8 +154,18 @@ export default function Page() {
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
-  const [tokenInfo, setTokenInfo] = useState("");
   const [session, setSession] = useState<{ userId: string; botRole: BotRole } | null>(null);
+
+  useEffect(() => {
+    const storedRole = window.localStorage.getItem(SESSION_ROLE_KEY);
+    const storedUser = window.localStorage.getItem(SESSION_USER_KEY);
+    if (isBotRole(storedRole) && storedUser) {
+      setSession({
+        userId: storedUser,
+        botRole: storedRole
+      });
+    }
+  }, []);
 
   async function issueToken(): Promise<AuthTokenResponse> {
     const tokenResponse = await fetch(`${gatewayUrl}/auth/token`, {
@@ -155,7 +180,8 @@ export default function Page() {
     });
 
     if (!tokenResponse.ok) {
-      throw new Error(await parseErrorResponse(tokenResponse));
+      const parsedError = await parseErrorResponse(tokenResponse);
+      throw new Error(parsedError.message);
     }
 
     const tokenPayload = (await tokenResponse.json()) as AuthTokenResponse;
@@ -166,9 +192,8 @@ export default function Page() {
       userId: tokenPayload.user_id,
       botRole: tokenPayload.bot_role
     });
-    setTokenInfo(
-      `${tokenPayload.token_type} token issued for ${tokenPayload.user_id} (${tokenPayload.bot_role}) (${tokenPayload.expires_in_seconds}s)`
-    );
+    window.localStorage.setItem(SESSION_ROLE_KEY, tokenPayload.bot_role);
+    window.localStorage.setItem(SESSION_USER_KEY, tokenPayload.user_id);
     return tokenPayload;
   }
 
@@ -216,7 +241,30 @@ export default function Page() {
       });
 
       if (!chatResponse.ok) {
-        throw new Error(await parseErrorResponse(chatResponse));
+        const parsedError = await parseErrorResponse(chatResponse);
+        const reasonCode = parsedError.reasonCode ?? `HTTP_${chatResponse.status}`;
+        if (chatResponse.status === 403 || reasonCode.startsWith("DENY_")) {
+          const denialMessage = parsedError.reasonCode
+            ? `Access denied: ${parsedError.message} (${parsedError.reasonCode})`
+            : `Access denied: ${parsedError.message}`;
+          const deniedTurn: ChatTurn = {
+            id: Date.now(),
+            userMessage: trimmedMessage,
+            assistantAnswer: denialMessage,
+            citations: [],
+            blocked: [
+              {
+                citationId: "request#1",
+                reasonCode,
+                humanMessage: parsedError.message
+              }
+            ],
+            promptsUsed: null
+          };
+          setChatTurns((previous) => [...previous, deniedTurn]);
+          return;
+        }
+        throw new Error(parsedError.message);
       }
 
       const payload = (await chatResponse.json()) as AgentChatResponse;
@@ -246,6 +294,16 @@ export default function Page() {
         <p className="kicker">Secure AI Gateway</p>
         <h1>Policy-Controlled Assistant</h1>
         <p className="subtitle">Log in with a role and chat.</p>
+        <p className={session ? "role-pill role-pill-active" : "role-pill"}>
+          Active Role:{" "}
+          {session ? (
+            <>
+              <strong>{session.botRole}</strong> ({session.userId})
+            </>
+          ) : (
+            "Not signed in"
+          )}
+        </p>
       </section>
 
       <section className="panel">
@@ -273,12 +331,7 @@ export default function Page() {
             {isSending ? "Working..." : "Login"}
           </button>
         </form>
-        <p className="token-info">
-          Demo credentials: <code>hr_bot_user / hr-demo-2026</code> or <code>marketing_bot_user /
-          marketing-demo-2026</code>
-        </p>
         {session ? <p className="token-info">Session: {session.userId} ({session.botRole})</p> : null}
-        {tokenInfo ? <p className="token-info">{tokenInfo}</p> : null}
       </section>
 
       <section className="panel">
